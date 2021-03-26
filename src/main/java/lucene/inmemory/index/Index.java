@@ -23,16 +23,17 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-public class Lookup {
+public class Index {
     private static final Analyzer ANALYZER = new EnglishAnalyzer();
-    private static final String DESCRIPTION_KEY = "DESCRIPTION";
+    private static final String TAGS_KEY = "TAGS";
     private static final String ID_KEY = "ID";
 
     private final IndexSearcher dirSearcher;
 
-    public Lookup(Path dataLoc) throws IOException {
+    public Index(Path dataLoc) throws IOException {
         ByteBuffersDirectory directory = new ByteBuffersDirectory();
 
         try (IndexWriter directoryWriter = new IndexWriter(directory, new IndexWriterConfig(ANALYZER));
@@ -49,11 +50,19 @@ public class Lookup {
     }
 
     private static void indexLine(String line, IndexWriter directoryWriter) {
+        if (line.isEmpty()) return;
+
         String[] data = line.split(",");
+        String id = data[0];
+        String[] items = data[1].toLowerCase().split(Pattern.quote("|"));
+        Arrays.sort(items); // so that setPositionIncrementGap between similar tags are closer
 
         Document doc = new Document();
-        doc.add(new StoredField(ID_KEY, data[0]));
-        doc.add(new TextField(DESCRIPTION_KEY, data[1], Field.Store.YES));
+        doc.add(new StoredField(ID_KEY, id));
+        for (String it : items) {
+            doc.add(new TextField(TAGS_KEY, it, Field.Store.NO));
+        }
+
         try {
             directoryWriter.addDocument(doc);
         } catch (IOException e) {
@@ -67,7 +76,7 @@ public class Lookup {
     public List<List<String>> search(String queryString, int limit) throws ParseException, IOException {
         List<List<String>> matches = new ArrayList<>();
 
-        Query query = new QueryParser(DESCRIPTION_KEY, ANALYZER)
+        Query query = new QueryParser(TAGS_KEY, ANALYZER)
                 .parse(queryString);
 
         TopDocs topDocs = dirSearcher.search(query, limit);
